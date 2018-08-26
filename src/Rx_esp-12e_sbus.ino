@@ -77,6 +77,10 @@ uint8_t txid_offset = 0;
 int chanrow = 0;
 int chanoffset = 0;
 
+// stats helpers
+int last_packets = 0;
+uint32_t last_millis = 0;
+
 // shared between normal code and interrupt handlers
 volatile int chancol = 0;
 volatile int this_read_packets = 0;
@@ -84,8 +88,6 @@ volatile int other_read_packets = 0;
 volatile int invalid_read_packets = 0;
 volatile unsigned long last_packet_read_time = 0;
 volatile bool fail_safe_mode = false;
-
-// rx
 volatile int servo_values[NUMBER_OF_CHANNELS]; // also shared between normal code and interrupt handlers
 
 #define txid32 (txid[0] + (txid[1] << 8) + (txid[2] << 16) + (txid[3] << 24))
@@ -128,11 +130,11 @@ void setup()
   SPI.begin();
   SPI.setHwCs(true);
   // initialize A7105
-  // write id
   SPI.writeb(0x00, 0x00); // reset
+  // write id
   SPI.writeid(0x06, 0x5475c52A);
 #if defined(DEBUG)
-  // read id
+  // read id back
   uint32_t id = SPI.readid(0x06);
   Serial.print("id ");
   Serial.println(id, HEX);
@@ -177,6 +179,9 @@ void setup()
   SPI.writeb(0x25, 0x09);
   // at last: GIO pin mode
   pinMode(GIO_PIN, INPUT_PULLUP);
+  // initialize servo values to fail safe values
+  for (int i = 0; i < NUMBER_OF_CHANNELS; i++)
+    servo_values[i] = fail_safe_servo_values[i];
   // only attach interrupt when not in binding mode, that handles reading of packets manually
   if (!binding)
   {
@@ -213,7 +218,7 @@ void binding_mode()
   while (1)
   {
     delay(10);
-    // switch led state on bit 3 of counter
+    // toggle led state on bit 3 of counter (8*10 ms): quick led flicker
     digitalWrite(LED_PIN, (counter++ & 8) == 0);
     if (!digitalRead(GIO_PIN))
     {
@@ -225,7 +230,7 @@ void binding_mode()
         SPI.readdata(0x05, packet, sizeof(packet));
         if (packet[0] == 0xaa)
         {
-          // first 4 bytes of packet are transmitter id
+          // bytes 1-4 of packet are transmitter id (observed: byte 0 is 0x55(normal) or 0xaa(binding))
           for (int i = 0; i < 4; i++)
           {
             txid[i] = packet[i + 1];
@@ -235,15 +240,16 @@ void binding_mode()
           EEPROM.commit();
 #if defined(DEBUG)
           Serial.print("found transmiter to bind to ");
-          Serial.println(txid32, HEX); // convert 4 bytes via pointer to unsigned long
+          Serial.println(txid32, HEX);
 #endif
-          // endless loop till reset (binding plug should be removed now)
+          // continuous lid led: signal we found a transmitter and are bound
           digitalWrite(LED_PIN, LED_ON);
+          // endless loop till reset (binding plug should be removed now)
           while (1)
             delay(10); // to avoid watchdog
         }
       }
-      // restart
+      // re-init
       set_chan(0);
     }
   }
@@ -251,12 +257,13 @@ void binding_mode()
 
 void handle_new_packet()
 {
-  // todo: read packet from rx
+  // read packet from rx on interrupt on GIO1 going low
   // check packet valid flag
   if (bitRead(SPI.readb(0x00), 5) == 0)
   {
     uint8_t packet[21];
     SPI.readdata(0x05, packet, sizeof(packet));
+    // check if packet is for us (registered tx id)
     if ((packet[1] == txid[0]) && (packet[2] == txid[1]) && (packet[3] == txid[2]) && (packet[4] == txid[3]))
     {
       // extract new servo values from packet
@@ -288,9 +295,6 @@ void handle_new_packet()
     set_chan(-1); // re-init but do not set channel
   }
 }
-
-int last_packets = 0;
-uint32_t last_millis = 0;
 
 void output_servo_values()
 {
@@ -371,6 +375,8 @@ void loop()
   {
     check_fail_safe_mode();
     output_servo_values();
+#ifdef DEBUG
     delay(100); // to give time to serial output
+#endif
   }
 }
