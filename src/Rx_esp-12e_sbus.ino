@@ -6,8 +6,17 @@
 
 // config
 #define DEBUG
+#define NUMBER_OF_CHANNELS 8
+#define FAIL_SAFE_TIME_MILLIS 1500
+int fail_safe_servo_values[NUMBER_OF_CHANNELS] = {1500, 1500, 900, 1500, 1500, 1500, 1500, 1500}; // 9x: throttle 900 rest middel to signal failsafe
 
-// io
+#define LED_PIN 2 // GPIO2
+#define LED_ON LOW
+#define LED_OFF HIGH
+
+#define BIND_PIN 4 // GPIO4
+#define GIO_PIN 5  // GPIO5
+
 /*
   SPI GPIO13  MOSI  WHITE   R   YELLOW  A7105 DIO
       GPIO12  MISO  YELLOW  -   YELLOW  A7105 DIO
@@ -18,18 +27,16 @@
 
   BND GPIO4         BLUE    R   Vcc/GND
 
-  my 9x id 00035D9B
+  my 9x id seems to be 00035D9B
+
+  https://www.youtube.com/watch?v=tsTZJim1LbY&index=8&list=WL&t=0s
 
   latency taranis x9d:  23 ms    updates 111hz  sbus
   latency tgy i6s:      15 ms    updates 130hz  ibus
 
-*/
-#define LED_PIN 2 // GPIO2
-#define LED_ON LOW
-#define LED_OFF HIGH
+  tip: ftdi connection to esp locks serial monitor on rts/dtr: ctrl-t+ctrl-r and ctrl-t+ctrl-d fixes that
 
-#define BIND_PIN 4 // GPIO4
-#define GIO_PIN 5  // GPIO5
+*/
 
 // initialisation data for 7105, address 0x00-0x32, ff=skip
 static const uint8_t A7105_regs[] = {
@@ -74,19 +81,12 @@ int chanoffset = 0;
 volatile int chancol = 0;
 volatile int this_read_packets = 0;
 volatile int other_read_packets = 0;
+volatile int invalid_read_packets = 0;
 volatile unsigned long last_packet_read_time = 0;
 volatile bool fail_safe_mode = false;
 
 // rx
-#define NUMBER_OF_CHANNELS 8
 volatile int servo_values[NUMBER_OF_CHANNELS]; // also shared between normal code and interrupt handlers
-
-int fail_safe_servo_values[NUMBER_OF_CHANNELS] = {1500, 1500, 900, 1500, 1500, 1500, 1500, 1500}; // 9x: throttle 900 rest middel to signal failsafe
-#define FAIL_SAFE_TIME_MILLIS 1500
-
-//int missed_packets = 0;
-//uint16_t nopacket = 0;
-//int failsafeCnt = 0;
 
 #define txid32 (txid[0] + (txid[1] << 8) + (txid[2] << 16) + (txid[3] << 24))
 
@@ -94,7 +94,7 @@ void setup()
 {
   // initialize non-A7105
   pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LED_OFF);
+  digitalWrite(LED_PIN, LED_ON);
   // debug console
 #if defined(DEBUG)
   Serial.begin(74880); // esp default baud rate
@@ -188,16 +188,28 @@ void setup()
 #endif
 }
 
+void set_chan(int channel)
+{
+  SPI.strobe(0xA0);
+  SPI.strobe(0xF0);
+  if (channel >= 0)
+    SPI.writeb(0x0F, channel);
+  SPI.strobe(0xC0);
+}
+
+void next_chan()
+{
+  set_chan(tx_channels[chanrow][chancol] - chanoffset - 1);
+  chancol = (chancol + 1) % 16;
+}
+
 void binding_mode()
 {
 #if defined(DEBUG)
   Serial.println("entering binding mode");
 #endif
   int counter = 0;
-  SPI.strobe(0xa0);
-  SPI.strobe(0xf0);
-  SPI.writeb(0x0f, 0x00); // listen on channel 0 for binding
-  SPI.strobe(0xc0);
+  set_chan(0); // listen on channel 0 for binding
   while (1)
   {
     delay(10);
@@ -232,104 +244,10 @@ void binding_mode()
         }
       }
       // restart
-      SPI.strobe(0xa0);
-      SPI.strobe(0xf0);
-      SPI.writeb(0x0f, 0x00); // listen on channel 0 for binding
-      SPI.strobe(0xc0);
+      set_chan(0);
     }
   }
 }
-
-void next_chan()
-{
-  SPI.strobe(0xA0);
-  SPI.strobe(0xF0);
-  SPI.writeb(0x0F, tx_channels[chanrow][chancol] - chanoffset - 1);
-  SPI.strobe(0xC0);
-  chancol = (chancol + 1) % 16;
-}
-
-void same_chan()
-{
-  SPI.strobe(0xA0);
-  SPI.strobe(0xF0);
-  SPI.strobe(0xC0);
-}
-
-/*
-bool read_packet(uint8_t *packet, int size)
-{
-  if ((digitalRead(GIO_PIN) == 0) && (bitRead(SPI.readb(0x00), 5) == 0))
-  {
-    SPI.readdata(0x05, packet, size);
-    return (packet[1] == txid[0]) && (packet[2] == txid[1]) && (packet[3] == txid[2]) && (packet[4] == txid[3]);
-  }
-  else
-    return false;
-}
-*/
-
-/*
-void normal_mode()
-{
-  // try to read and process 1 valid packet
-  next_chan();
-  unsigned long start_millis = millis();
-  uint8_t packet[21];
-  bool fail_safe_active = false;
-  int missed_loops = 0;
-  while (!read_packet(packet, sizeof(packet)))
-  {
-    if (!fail_safe_active && (millis() - start_millis >= FAIL_SAFE_TIME_MILLIS))
-    {
-      // we go to failsafe
-      fail_safe_active = true;
-      digitalWrite(LED_PIN, LED_OFF);
-      for (int i = 0; i < NUMBER_OF_CHANNELS; i++)
-        servo_values[i] = fail_safe_servo_values[i];
-      output_servo_values(servo_values, NUMBER_OF_CHANNELS);
-#ifdef DEBUG
-      Serial.println(" FAILSAFE");
-#endif
-    }
-    missed_loops++;
-    // after too many missed loops try other channel but also give other processes time
-    if (missed_loops % 500 == 0)
-      missed_packets++;
-    if (missed_loops % 5001 == 0)
-    {
-      yield();
-      next_chan();
-    }
-  }
-  read_packets++;
-  if (fail_safe_active)
-    digitalWrite(LED_PIN, LED_ON);
-  // process packet to get channel values
-  for (int i = 0; i < NUMBER_OF_CHANNELS; i++)
-  {
-    int v = (packet[5 + (2 * i)] + 256 * packet[6 + (2 * i)]);
-    if ((v >= 900) && (v <= 2200))
-      servo_values[i] = v;
-  }
-  output_servo_values(servo_values, NUMBER_OF_CHANNELS);
-#ifdef DEBUG
-  if (read_packets % 50 == 0)
-  {
-    Serial.print(" ");
-    Serial.print(chancol, HEX);
-    Serial.print(" OK (");
-    Serial.print(read_packets);
-    Serial.print(", ");
-    Serial.print(missed_packets);
-    Serial.print(", ");
-    Serial.print(missed_loops);
-    Serial.println(")");
-  }
-#endif
-  
-}
-*/
 
 void handle_new_packet()
 {
@@ -358,29 +276,33 @@ void handle_new_packet()
         digitalWrite(LED_PIN, LED_ON);
       }
     }
-    else {
+    else
+    {
       other_read_packets++;
-      same_chan();
+      set_chan(-1); // re-init but do not set channel
     }
   }
   else
   {
-    same_chan();
+    invalid_read_packets++;
+    set_chan(-1); // re-init but do not set channel
   }
 }
+
+int last_packets = 0;
+uint32_t last_millis = 0;
 
 void output_servo_values()
 {
   // copy servo values to local copy while interrupts are disabled
   int local_servo_values[NUMBER_OF_CHANNELS];
-  int local_this_read_packets;
-  int local_other_read_packets;
   // safe region
   noInterrupts();
   for (int i = 0; i < NUMBER_OF_CHANNELS; i++)
     local_servo_values[i] = servo_values[i];
-  local_this_read_packets = this_read_packets;
-  local_other_read_packets = other_read_packets;
+  int local_this_read_packets = this_read_packets;
+  int local_other_read_packets = other_read_packets;
+  int local_invalid_read_packets = invalid_read_packets;
   interrupts();
 
   // todo: output safe servo values on sbus/ppm/ibus..
@@ -399,35 +321,46 @@ void output_servo_values()
   }
   Serial.print(" ");
   Serial.print(chancol, HEX);
-  if (fail_safe_mode)
-  {
-    Serial.print(" FAILSAFE ");
-  }
-  else
-  {
-    Serial.print(" OK ");
-  }
+  Serial.print(fail_safe_mode ? " FAILSAFE " : " OK ");
   Serial.print(" O ");
   Serial.print(local_other_read_packets);
-  Serial.print(" T ");
-  Serial.println(local_this_read_packets);
+  Serial.print(" I ");
+  Serial.print(local_invalid_read_packets);
+  Serial.print(" (");
+  Serial.print(100.0 * (float)local_invalid_read_packets / (float)local_this_read_packets);
+  Serial.print(" %) T ");
+  Serial.print(" %) T ");
+  Serial.print(local_this_read_packets);
+  uint32_t now_millis = millis();
+  if (last_packets != 0)
+  {
+    Serial.print(" ");
+    float delta_packets = local_this_read_packets - last_packets;
+    float delta_millis = now_millis - last_millis;
+    float hz = 1000.0 * delta_packets / delta_millis;
+    Serial.print(hz);
+    Serial.print(" Hz");
+  }
+  last_millis = now_millis;
+  last_packets = local_this_read_packets;
+  Serial.println();
   Serial.flush();
 #endif
 }
 
 void check_fail_safe_mode()
 {
+  // we are accessing shared variables so disable interrupts for now
+  noInterrupts();
   if (!fail_safe_mode && (millis() - last_packet_read_time > FAIL_SAFE_TIME_MILLIS))
   {
-    noInterrupts();
     for (int i = 0; i < NUMBER_OF_CHANNELS; i++)
       servo_values[i] = fail_safe_servo_values[i];
     fail_safe_mode = true;
     digitalWrite(LED_PIN, LED_OFF);
-    
-    same_chan();
-    interrupts();
+    set_chan(-1); // re-init but do not set channel
   }
+  interrupts();
 }
 
 void loop()
@@ -438,6 +371,6 @@ void loop()
   {
     check_fail_safe_mode();
     output_servo_values();
-    
+    delay(100); // to give time to serial output
   }
 }
