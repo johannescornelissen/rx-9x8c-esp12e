@@ -21,7 +21,7 @@
 
 // added some extra functions for addressing A7105
 
-#include "SPI.h"
+#include "A7105-SPI.h"
 #include "HardwareSerial.h"
 
 #define SPI_PINS_HSPI			0 // Normal HSPI mode (MISO = GPIO12, MOSI = GPIO13, SCLK = GPIO14);

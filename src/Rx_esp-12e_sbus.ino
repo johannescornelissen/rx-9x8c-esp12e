@@ -1,7 +1,7 @@
 // esp-12e code for 9x rx simulation with sbus output
 // used a lot of code from midelic on RCgroups.com
 
-#include "SPI.h" // use own extended spi lib
+#include <A7105-SPI.h> // use own extended spi lib
 #include <EEPROM.h>
 
 // config
