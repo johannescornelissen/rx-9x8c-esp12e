@@ -1,11 +1,12 @@
 // esp-12e code for 9x rx simulation with sbus output
 // used a lot of code from midelic on RCgroups.com
 
-#include <A7105-SPI.h> // use own extended spi lib
 #include <EEPROM.h>
+#include <A7105-SPI.h> // use own extended spi lib
+#include <sbus.h>
 
 // config
-#define DEBUG
+//#define DEBUG
 #define NUMBER_OF_CHANNELS 8
 #define FAIL_SAFE_TIME_MILLIS 1500
 int fail_safe_servo_values[NUMBER_OF_CHANNELS] = {1500, 1500, 900, 1500, 1500, 1500, 1500, 1500}; // 9x: throttle 900 rest middel to signal failsafe
@@ -35,6 +36,14 @@ int fail_safe_servo_values[NUMBER_OF_CHANNELS] = {1500, 1500, 900, 1500, 1500, 1
   latency tgy i6s:      15 ms    updates 130hz  ibus
 
   tip: ftdi connection to esp locks serial monitor on rts/dtr: ctrl-t+ctrl-r and ctrl-t+ctrl-d fixes that
+
+  rx protocols in betaflight
+    https://github.com/betaflight/betaflight/tree/master/src/main/rx
+
+  ibus:
+    https://basejunction.wordpress.com/2015/08/23/en-flysky-i6-14-channels-part1/
+    130 Hz, Serial 115200 bauds, 8n1, header 2B, 14*channel 2B, footer 2B
+
 
 */
 
@@ -101,6 +110,8 @@ void setup()
 #if defined(DEBUG)
   Serial.begin(74880); // esp default baud rate
   Serial.println("init");
+#else
+  SBUS.begin(&Serial); // use serial on GPIO1 for SBUS output
 #endif
   // check for binding option
   pinMode(BIND_PIN, INPUT_PULLUP);
@@ -349,6 +360,12 @@ void output_servo_values()
   last_packets = local_this_read_packets;
   Serial.println();
   Serial.flush();
+#else
+  sbus_frame_t sbus_frame;
+  SBUS.send_frame(SBUSClass::build_sbus_frame(
+      &sbus_frame,                                          // frame
+      local_servo_values, NUMBER_OF_CHANNELS, false, false, // channels
+      false, fail_safe_mode, 0));                           // status
 #endif
 }
 
