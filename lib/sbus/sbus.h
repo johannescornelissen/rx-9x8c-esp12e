@@ -27,6 +27,8 @@ bit1 = n/a
 bit0 = n/a
 
 endbyte = 00000000b
+
+and https://github.com/betaflight/betaflight/tree/master/src/main/rx
 */
 
 #ifndef _SBUS_H_INCLUDED
@@ -37,48 +39,39 @@ endbyte = 00000000b
 
 #define SBUS_START_BYTE 0xf0
 #define SBUS_END_BYTE 0x00
-#define SBUS_UNDEFINED_CHANNEL_VALUE 1 // todo:1500
+#define SBUS_UNDEFINED_CHANNEL_VALUE 1500
 
 typedef struct
 {
-    bool ch17 : 1;
-    bool ch18 : 1;
-    bool Frame_lost : 1;
-    bool failsafe_activated : 1;
+    unsigned int ch1 : 11;
+    unsigned int ch2 : 11;
+    unsigned int ch3 : 11;
+    unsigned int ch4 : 11;
+    unsigned int ch5 : 11;
+    unsigned int ch6 : 11;
+    unsigned int ch7 : 11;
+    unsigned int ch8 : 11;
+    unsigned int ch9 : 11;
+    unsigned int ch10 : 11;
+    unsigned int ch11 : 11;
+    unsigned int ch12 : 11;
+    unsigned int ch13 : 11;
+    unsigned int ch14 : 11;
+    unsigned int ch15 : 11;
+    unsigned int ch16 : 11;
     uint8_t counter : 4;
-} sbus_frame_flags_t;
-
-typedef struct
-{
-
-} sbus_channels_t;
+    bool failsafe_activated : 1;
+    bool Frame_lost : 1;
+    bool ch18 : 1;
+    bool ch17 : 1;
+} __attribute__((__packed__)) sbus_channels_t;
 
 typedef struct
 {
     uint8_t startbyte;
-    //sbus_channels_t channels;
-    uint8_t channels[22];
-    /*
-    uint16_t ch1 : 11;
-    uint16_t ch2 : 11;
-    uint16_t ch3 : 11;
-    uint16_t ch4 : 11;
-    uint16_t ch5 : 11;
-    uint16_t ch6 : 11;
-    uint16_t ch7 : 11;
-    uint16_t ch8 : 11;
-    uint16_t ch9 : 11;
-    uint16_t ch10 : 11;
-    uint16_t ch11 : 11;
-    uint16_t ch12 : 11;
-    uint16_t ch13 : 11;
-    uint16_t ch14 : 11;
-    uint16_t ch15 : 11;
-    uint16_t ch16 : 11;
-    */
-    sbus_frame_flags_t flags;
+    sbus_channels_t channels;
     uint8_t endbyte;
-} sbus_frame_t __attribute__((packed));
+} __attribute__((packed)) sbus_frame_t;
 
 class SBUSClass
 {
@@ -89,7 +82,7 @@ class SBUSClass
     bool send_frame(sbus_frame_t *sbus_frame);
     static sbus_frame_t *build_sbus_frame(
         sbus_frame_t *sbus_frame,
-        int *channels, int channel_count, bool ch17, bool ch18,
+        int *channels, int channel_count,
         bool frame_lost, bool fail_safe_activated, int counter);
 
   private:

@@ -40,6 +40,8 @@ int fail_safe_servo_values[NUMBER_OF_CHANNELS] = {1500, 1500, 900, 1500, 1500, 1
   rx protocols in betaflight
     https://github.com/betaflight/betaflight/tree/master/src/main/rx
 
+
+  todo: 
   ibus:
     https://basejunction.wordpress.com/2015/08/23/en-flysky-i6-14-channels-part1/
     130 Hz, Serial 115200 bauds, 8n1, header 2B, 14*channel 2B, footer 2B
@@ -98,6 +100,9 @@ volatile int invalid_read_packets = 0;
 volatile unsigned long last_packet_read_time = 0;
 volatile bool fail_safe_mode = false;
 volatile int servo_values[NUMBER_OF_CHANNELS]; // also shared between normal code and interrupt handlers
+
+// output
+int sbus_frame_counter = 0;
 
 #define txid32 (txid[0] + (txid[1] << 8) + (txid[2] << 16) + (txid[3] << 24))
 
@@ -322,8 +327,6 @@ void output_servo_values()
 #endif
   interrupts();
 
-  // todo: output safe servo values on sbus/ppm/ibus..
-
 #if defined(DEBUG)
   // show safe local servo values
   for (int i = 0; i < NUMBER_OF_CHANNELS; i++)
@@ -363,11 +366,14 @@ void output_servo_values()
   Serial.println();
   Serial.flush();
 #else
+  sbus_frame_counter++;
+  if (sbus_frame_counter > 3)
+    sbus_frame_counter = 0;
   sbus_frame_t sbus_frame;
   SBUS.send_frame(SBUSClass::build_sbus_frame(
-      &sbus_frame,                                                       // frame
-      local_servo_values, 0 /* todo: NUMBER_OF_CHANNELS*/, false, false, // channels
-      false, fail_safe_mode, 0));                                        // status
+      &sbus_frame,                                          // frame
+      local_servo_values, NUMBER_OF_CHANNELS,               // channels
+      fail_safe_mode, fail_safe_mode, sbus_frame_counter)); // status
 #endif
 }
 
