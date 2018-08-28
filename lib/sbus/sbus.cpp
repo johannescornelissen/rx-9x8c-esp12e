@@ -9,7 +9,7 @@ void SBUSClass::begin(HardwareSerial *serial)
 {
     fSerial = serial;
     if (fSerial)
-        fSerial->begin(100000, SERIAL_8E2);
+        fSerial->begin(100000, SERIAL_8E2, SERIAL_TX_ONLY);
 }
 void SBUSClass::end()
 {
@@ -23,17 +23,18 @@ void SBUSClass::end()
 bool SBUSClass::send_frame(sbus_frame_t *sbus_frame)
 {
     if (fSerial)
-        return fSerial->write((uint8_t *)sbus_frame, sizeof(*sbus_frame))==sizeof(*sbus_frame);
+        return fSerial->write((uint8_t *)sbus_frame, sizeof(*sbus_frame)) == sizeof(*sbus_frame);
     else
         return false;
 }
 
 sbus_frame_t *SBUSClass::build_sbus_frame(
-    sbus_frame_t *sbus_frame, 
-    int *channels, int channel_count, bool ch17, bool ch18, 
+    sbus_frame_t *sbus_frame,
+    int *channels, int channel_count, bool ch17, bool ch18,
     bool frame_lost, bool fail_safe_activated, int counter)
 {
     sbus_frame->startbyte = SBUS_START_BYTE;
+    /*
     sbus_frame->ch1 = channel_count >= 1 ? channels[1 - 1] : SBUS_UNDEFINED_CHANNEL_VALUE;
     sbus_frame->ch2 = channel_count >= 2 ? channels[2 - 1] : SBUS_UNDEFINED_CHANNEL_VALUE;
     sbus_frame->ch3 = channel_count >= 3 ? channels[3 - 1] : SBUS_UNDEFINED_CHANNEL_VALUE;
@@ -50,6 +51,9 @@ sbus_frame_t *SBUSClass::build_sbus_frame(
     sbus_frame->ch14 = channel_count >= 14 ? channels[14 - 1] : SBUS_UNDEFINED_CHANNEL_VALUE;
     sbus_frame->ch15 = channel_count >= 15 ? channels[15 - 1] : SBUS_UNDEFINED_CHANNEL_VALUE;
     sbus_frame->ch16 = channel_count >= 16 ? channels[16 - 1] : SBUS_UNDEFINED_CHANNEL_VALUE;
+    */
+    for (int i = 0; i < 22; i++)
+        sbus_frame->channels[i] = 1;
     sbus_frame->flags.ch17 = ch17;
     sbus_frame->flags.ch18 = ch18;
     sbus_frame->flags.Frame_lost = frame_lost;

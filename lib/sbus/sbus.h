@@ -35,41 +35,50 @@ endbyte = 00000000b
 #include <stdint.h>
 #include <HardwareSerial.h>
 
-#define SBUS_START_BYTE 0xF0
-#define SBUS_END_BYTE 0xF0
-#define SBUS_UNDEFINED_CHANNEL_VALUE 1500
+#define SBUS_START_BYTE 0xf0
+#define SBUS_END_BYTE 0x00
+#define SBUS_UNDEFINED_CHANNEL_VALUE 1 // todo:1500
 
 typedef struct
 {
-    uint8_t ch17 : 1;
-    uint8_t ch18 : 1;
-    uint8_t Frame_lost : 1;
-    uint8_t failsafe_activated : 1;
+    bool ch17 : 1;
+    bool ch18 : 1;
+    bool Frame_lost : 1;
+    bool failsafe_activated : 1;
     uint8_t counter : 4;
 } sbus_frame_flags_t;
 
 typedef struct
 {
-    uint8_t startbyte; 
-    int ch1 : 11;
-    int ch2 : 11;
-    int ch3 : 11;
-    int ch4 : 11;
-    int ch5 : 11;
-    int ch6 : 11;
-    int ch7 : 11;
-    int ch8 : 11;
-    int ch9 : 11;
-    int ch10 : 11;
-    int ch11 : 11;
-    int ch12 : 11;
-    int ch13 : 11;
-    int ch14 : 11;
-    int ch15 : 11;
-    int ch16 : 11;
+
+} sbus_channels_t;
+
+typedef struct
+{
+    uint8_t startbyte;
+    //sbus_channels_t channels;
+    uint8_t channels[22];
+    /*
+    uint16_t ch1 : 11;
+    uint16_t ch2 : 11;
+    uint16_t ch3 : 11;
+    uint16_t ch4 : 11;
+    uint16_t ch5 : 11;
+    uint16_t ch6 : 11;
+    uint16_t ch7 : 11;
+    uint16_t ch8 : 11;
+    uint16_t ch9 : 11;
+    uint16_t ch10 : 11;
+    uint16_t ch11 : 11;
+    uint16_t ch12 : 11;
+    uint16_t ch13 : 11;
+    uint16_t ch14 : 11;
+    uint16_t ch15 : 11;
+    uint16_t ch16 : 11;
+    */
     sbus_frame_flags_t flags;
-    uint8_t endbyte; 
-} sbus_frame_t;
+    uint8_t endbyte;
+} sbus_frame_t __attribute__((packed));
 
 class SBUSClass
 {

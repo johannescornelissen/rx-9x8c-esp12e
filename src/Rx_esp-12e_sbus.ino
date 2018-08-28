@@ -315,9 +315,11 @@ void output_servo_values()
   noInterrupts();
   for (int i = 0; i < NUMBER_OF_CHANNELS; i++)
     local_servo_values[i] = servo_values[i];
+#if defined(DEBUG)
   int local_this_read_packets = this_read_packets;
   int local_other_read_packets = other_read_packets;
   int local_invalid_read_packets = invalid_read_packets;
+#endif
   interrupts();
 
   // todo: output safe servo values on sbus/ppm/ibus..
@@ -363,9 +365,9 @@ void output_servo_values()
 #else
   sbus_frame_t sbus_frame;
   SBUS.send_frame(SBUSClass::build_sbus_frame(
-      &sbus_frame,                                          // frame
-      local_servo_values, NUMBER_OF_CHANNELS, false, false, // channels
-      false, fail_safe_mode, 0));                           // status
+      &sbus_frame,                                                       // frame
+      local_servo_values, 0 /* todo: NUMBER_OF_CHANNELS*/, false, false, // channels
+      false, fail_safe_mode, 0));                                        // status
 #endif
 }
 
@@ -394,6 +396,8 @@ void loop()
     output_servo_values();
 #ifdef DEBUG
     delay(100); // to give time to serial output
+#else
+    delay(6);
 #endif
   }
 }
