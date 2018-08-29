@@ -58,27 +58,12 @@ class SPIClass
 {
 public:
   SPIClass();
-  bool pins(int8_t sck, int8_t miso, int8_t mosi, int8_t ss);
   void begin();
   void end();
   void setHwCs(bool use);
-  void setBitOrder(uint8_t bitOrder);
   void setDataMode(uint8_t dataMode);
   void setFrequency(uint32_t freq);
   void setClockDivider(uint32_t clockDiv);
-  void beginTransaction(SPISettings settings);
-  uint8_t transfer(uint8_t data);
-  uint16_t transfer16(uint16_t data);
-  void transfer(void *buf, uint16_t count);
-  void write(uint8_t data);
-  void write16(uint16_t data);
-  void write16(uint16_t data, bool msb);
-  void write32(uint32_t data);
-  void write32(uint32_t data, bool msb);
-  void writeBytes(const uint8_t *data, uint32_t size);
-  void writePattern(const uint8_t *data, uint8_t size, uint32_t repeat);
-  void transferBytes(const uint8_t *out, uint8_t *in, uint32_t size);
-  void endTransaction(void);
   // my additions for A7105
   void strobe(uint8_t command);
   void writeid(uint8_t address, uint32_t data);
@@ -86,13 +71,10 @@ public:
   uint32_t readid(uint8_t address);
   uint8_t readb(uint8_t address);
   void readdata(uint8_t address, uint8_t *data, int size);
-
+  inline void setDataBits(uint16_t bits);
 private:
   bool useHwCs;
   uint8_t pinSet;
-  void writeBytes_(const uint8_t *data, uint8_t size);
-  void transferBytes_(const uint8_t *out, uint8_t *in, uint8_t size);
-  inline void setDataBits(uint16_t bits);
 };
 
 #if !defined(NO_GLOBAL_INSTANCES) && !defined(NO_GLOBAL_SPI)
