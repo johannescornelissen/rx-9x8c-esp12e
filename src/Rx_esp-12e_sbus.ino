@@ -19,15 +19,28 @@ int fail_safe_servo_values[NUMBER_OF_CHANNELS] = {1500, 1500, 900, 1500, 1500, 1
 #define GIO_PIN 5  // GPIO5
 
 /*
-  SPI GPIO13  MOSI  WHITE   R   YELLOW  A7105 DIO
-      GPIO12  MISO  YELLOW  -   YELLOW  A7105 DIO
-      GPIO14  CLK   GREEN   -   GREEN   A7105 CK
-      GPIO15  EN    BROWN   -   WHITE   A7105 CS
+  connect esp - a7105
+    SPI GPIO13  MOSI  WHITE   R 4-6k  YELLOW  A7105 DIO
+        GPIO12  MISO  YELLOW    -     YELLOW  A7105 DIO
+        GPIO14  CLK   GREEN     -     GREEN   A7105 CK
+        GPIO15  EN    BROWN     -     WHITE   A7105 CS
 
-  STA GPIO16        BROWN   -   BROWN   A7105 GIO1
+    STA GPIO16        BROWN     -     BROWN   A7105 GIO1
+    
+    BND GPIO4         BLUE    R 10k   Vcc/GND
 
-  BND GPIO4         BLUE    R   Vcc/GND
+  connect esp (#=A7105)
+    FTDI      RX        ----- esp-12e -----           RX        FTDI
 
+    rts       vcc  10k   9 rest    txd    8         sbus          rx
+                        10 adc     rxd    7                       tx
+              vcc  10k  11 ch_pd   gpio5  6        gio1#
+                        12 gpio16  gpio4  5         bind
+              #clk      13 gpio14  gpio0  4                       dtr
+              #dio      14 gpio12  gpio2  3
+              #dio  6k  15 gpio13  gpio15 2          en#
+    vcc       vcc       16 vcc     gnd    1          gnd          gnd
+  
   my 9x id seems to be 00035D9B
 
   https://www.youtube.com/watch?v=tsTZJim1LbY&index=8&list=WL&t=0s
@@ -44,8 +57,12 @@ int fail_safe_servo_values[NUMBER_OF_CHANNELS] = {1500, 1500, 900, 1500, 1500, 1
   todo: 
   ibus:
     https://basejunction.wordpress.com/2015/08/23/en-flysky-i6-14-channels-part1/
+    also: betaflight link above
     130 Hz, Serial 115200 bauds, 8n1, header 2B, 14*channel 2B, footer 2B
 
+  fport:
+    https://github.com/betaflight/betaflight/wiki/The-FrSky-FPort-Protocol
+    
 
 */
 
@@ -88,9 +105,11 @@ uint8_t txid_offset = 0;
 int chanrow = 0;
 int chanoffset = 0;
 
+#ifdef DEBUG
 // stats helpers
 int last_packets = 0;
 uint32_t last_millis = 0;
+#endif
 
 // shared between normal code and interrupt handlers
 volatile int chancol = 0;
@@ -104,6 +123,7 @@ volatile int servo_values[NUMBER_OF_CHANNELS]; // also shared between normal cod
 // output
 int sbus_frame_counter = 0;
 
+// create uint32_t from tx id in bytes
 #define txid32 (txid[0] + (txid[1] << 8) + (txid[2] << 16) + (txid[3] << 24))
 
 void setup()
@@ -112,7 +132,7 @@ void setup()
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LED_ON);
   // debug console
-#if defined(DEBUG)
+#ifdef DEBUG
   Serial.begin(74880); // esp default baud rate
   Serial.println("init");
 #else
@@ -121,7 +141,7 @@ void setup()
   // check for binding option
   pinMode(BIND_PIN, INPUT_PULLUP);
   binding = digitalRead(BIND_PIN) == 0;
-#if defined(DEBUG)
+#ifdef DEBUG
   if (binding)
     Serial.println("binding mode");
   else
@@ -130,10 +150,8 @@ void setup()
   // transmitter id from eeprom
   EEPROM.begin(4);
   for (int i = 0; i < 4; i++)
-  {
     txid[i] = EEPROM.read(txid_offset + i);
-  }
-#if defined(DEBUG)
+#ifdef DEBUG
   Serial.print("stored transmitter id ");
   Serial.println(txid32, HEX);
 #endif
@@ -149,21 +167,20 @@ void setup()
   SPI.writeb(0x00, 0x00); // reset
   // write id
   SPI.writeid(0x06, 0x5475c52A);
-#if defined(DEBUG)
+#ifdef DEBUG
   // read id back
   uint32_t id = SPI.readid(0x06);
   Serial.print("id ");
   Serial.println(id, HEX);
 #endif
   // init all byte registers of a7105
-  int i;
-  for (i = 0; i <= 0x32; i++)
+  for (int i = 0; i <= 0x32; i++)
   {
     if (A7105_regs[i] != 0xff)
       SPI.writeb(i, A7105_regs[i]);
   }
   // a7105 calibration
-#if defined(DEBUG)
+#ifdef DEBUG
   Serial.print("start calibraton ");
   int t = 0;
 #endif
@@ -173,13 +190,13 @@ void setup()
   while (d == 1)
   {
     delay(1);
-#if defined(DEBUG)
+#ifdef DEBUG
     if (++t % 200 == 0)
       Serial.print(".");
 #endif
     d = SPI.readb(0x02);
   }
-#if defined(DEBUG)
+#ifdef DEBUG
   if (d == 0)
     Serial.println(" done");
   else
@@ -204,7 +221,7 @@ void setup()
     attachInterrupt(GIO_PIN, handle_new_packet, FALLING);
     next_chan(); //  trigger reading
   }
-#if defined(DEBUG)
+#ifdef DEBUG
   Serial.println("init done");
 #endif
 }
@@ -226,7 +243,7 @@ void next_chan()
 
 void binding_mode()
 {
-#if defined(DEBUG)
+#ifdef DEBUG
   Serial.println("entering binding mode");
 #endif
   int counter = 0;
@@ -254,7 +271,7 @@ void binding_mode()
             EEPROM.write(txid_offset + i, txid[i]);
           }
           EEPROM.commit();
-#if defined(DEBUG)
+#ifdef DEBUG
           Serial.print("found transmiter to bind to ");
           Serial.println(txid32, HEX);
 #endif
@@ -308,7 +325,13 @@ void handle_new_packet()
   else
   {
     invalid_read_packets++;
-    set_chan(-1); // re-init but do not set channel
+    // todo: re-init but do not set channel or goto next channel next_chan();
+    uint8_t packet[21];
+    SPI.readdata(0x05, packet, sizeof(packet));
+    if ((packet[1] == txid[0]) && (packet[2] == txid[1]) && (packet[3] == txid[2]) && (packet[4] == txid[3]))
+      next_chan(); // prob. our tx so try again on next channel and keep in the flow
+    else
+      set_chan(-1); // prob. not our tx, reset and stay on same channel and wait for our tx (or mis a complete loop..)
   }
 }
 
@@ -320,14 +343,14 @@ void output_servo_values()
   noInterrupts();
   for (int i = 0; i < NUMBER_OF_CHANNELS; i++)
     local_servo_values[i] = servo_values[i];
-#if defined(DEBUG)
+#ifdef DEBUG
   int local_this_read_packets = this_read_packets;
   int local_other_read_packets = other_read_packets;
   int local_invalid_read_packets = invalid_read_packets;
 #endif
   interrupts();
 
-#if defined(DEBUG)
+#ifdef DEBUG
   // show safe local servo values
   for (int i = 0; i < NUMBER_OF_CHANNELS; i++)
   {
@@ -403,7 +426,7 @@ void loop()
 #ifdef DEBUG
     delay(100); // to give time to serial output
 #else
-    delay(6);
+    delay(3 + 6);                                           // 3ms send+6ms gap
 #endif
   }
 }
